@@ -1,0 +1,78 @@
+{
+    "app-id": "org.kde.labplot",
+    "runtime": "org.kde.Platform",
+    "runtime-version": "6.7",
+    "sdk": "org.kde.Sdk",
+    "command": "labplot",
+    "finish-args": [
+        "--share=ipc",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--device=dri",
+        "--filesystem=home",
+        "--share=network",
+        "--talk-name=org.freedesktop.Notifications",
+        "--env=PYTHONPATH=/app/lib/python3.12/site-packages"
+    ],
+    "cleanup": [
+        "/include",
+        "/lib/pkgconfig",
+        "/share/man",
+        "*.a",
+        "*.la"
+    ],
+    "modules": [
+        {
+            "name": "gsl",
+            "buildsystem": "autotools",
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://ftp.gnu.org/gnu/gsl/gsl-2.7.1.tar.gz",
+                    "sha256": "dcb0fbd43048832b757ff9942691a8dd70026d5da0ff85601e52687f6deeb34b"
+                }
+            ]
+        },
+        {
+            "name": "fftw3",
+            "buildsystem": "cmake-ninja",
+            "config-opts": [
+                "-DBUILD_SHARED_LIBS=ON",
+                "-DENABLE_THREADS=ON",
+                "-DENABLE_SSE2=ON",
+                "-DENABLE_AVX=ON",
+                "-DENABLE_AVX2=ON"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "http://www.fftw.org/fftw-3.3.10.tar.gz",
+                    "sha256": "56c932549852cddcfafdab3820b0200c7742675be92179e59e6215b340e26467"
+                }
+            ]
+        },
+        {
+            "name": "labplot",
+            "buildsystem": "cmake-ninja",
+            "builddir": true,
+            "config-opts": [
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_INSTALL_PREFIX=/app",
+                "-DBUILD_TESTING=OFF",
+                "-DENABLE_CANTOR=ON",
+                "-DENABLE_HDF5=OFF",
+                "-DENABLE_NETCDF=OFF",
+                "-DENABLE_PYTHON_SDK=OFF",
+                "-DENABLE_PYTHON_SCRIPTING=OFF",
+                "-DENABLE_READSTAT=OFF"
+            ],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://github.com/helloydh007/labplot.git",
+                    "branch": "master"
+                }
+            ]
+        }
+    ]
+}
