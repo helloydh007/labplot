@@ -153,7 +153,7 @@ void SettingsScriptingPage::changed() {
 }
 
 /*!
- * Scan standard locations for virtual environments and conda environments
+ * Scan standard locations for virtual environments, conda environments, and uv environments
  * and add them to the environment combo box.
  */
 void SettingsScriptingPage::discoverEnvironments() {
@@ -183,6 +183,20 @@ void SettingsScriptingPage::discoverEnvironments() {
 
 	for (const auto& dir : searchDirs)
 		scanForVenvs(dir);
+
+	// --- Conda environments ---
+	scanForCondaEnvs(home + QStringLiteral("/miniconda3/envs"));
+	scanForCondaEnvs(home + QStringLiteral("/anaconda3/envs"));
+	scanForCondaEnvs(home + QStringLiteral("/.conda/envs"));
+	scanForCondaEnvs(QStringLiteral("/opt/conda/envs"));
+	scanForCondaEnvs(QStringLiteral("/opt/miniconda3/envs"));
+	scanForCondaEnvs(QStringLiteral("/opt/anaconda3/envs"));
+
+	// --- uv environments ---
+	// uv stores Python installations in ~/.local/share/uv/python
+	// uv venv creates standard venvs, so they're already covered by scanForVenvs
+	// But we can also check for uv-managed Python versions
+	scanForUvEnvironments(home + QStringLiteral("/.local/share/uv/python"));
 }
 
 /*!
@@ -209,31 +223,62 @@ void SettingsScriptingPage::scanForVenvs(const QString& dir) {
 }
 
 /*!
+ * Scan a directory for Conda environments.
+ * Conda environments are identified by the presence of conda-meta directory.
+ */
+void SettingsScriptingPage::scanForCondaEnvs(const QString& dir) {
+	if (!QDir(dir).exists())
+		return;
+
+	const QDir condaEnvDir(dir);
+	const auto entries = condaEnvDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+	for (const auto& entry : entries) {
+		const QString envPath = dir + QLatin1Char('/') + entry;
+		const QString condaMetaPath = envPath + QStringLiteral("/conda-meta");
+		if (QDir(condaMetaPath).exists())
+			addEnvironment(envPath);
+	}
+}
+
+/*!
+ * Scan a directory for uv-managed Python installations.
+ * uv stores Python versions in subdirectories like cpython-3.11.0-linux-x86_64-gnu.
+ */
+void SettingsScriptingPage::scanForUvEnvironments(const QString& dir) {
+	if (!QDir(dir).exists())
+		return;
+
+	const QDir uvDir(dir);
+	const auto entries = uvDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+	for (const auto& entry : entries) {
+		const QString pythonPath = dir + QLatin1Char('/') + entry;
+#ifdef Q_OS_WIN
+		const QString executablePath = pythonPath + QStringLiteral("/python.exe");
+#else
+		const QString executablePath = pythonPath + QStringLiteral("/bin/python3");
+#endif
+		if (QFile(executablePath).exists())
+			addEnvironment(pythonPath);
+	}
+}
+
+/*!
  * Add a discovered environment to the combo box, using the directory name
- * as the display label and the site-packages path as item data.
+ * as the display label and the python executable path as item data.
  * Skips duplicates.
  */
 void SettingsScriptingPage::addEnvironment(const QString& rawEnvPath, bool selectAfterAdd, bool blockSignalsDuringSelect, bool isUserSelected) {
-	// Derive site-packages path — only accept environments matching the runtime Python minor version
 	const QString envPath = QDir::cleanPath(QFileInfo(rawEnvPath).absoluteFilePath());
 	QString executablePath;
 #ifdef Q_OS_WIN
 	executablePath = envPath + QStringLiteral("/Scripts/python.exe");
 #else
-	// On Unix, look specifically for lib/python<minor>/site-packages
 	executablePath = envPath + QStringLiteral("/bin/python");
 #endif
-	QString cfgPath = envPath + QStringLiteral("/pyvenv.cfg");
 
 	if (!QFile(executablePath).exists()) {
 		if (isUserSelected)
 			showErrorMessage(i18n("The selected virtual environment does not contain a python executable."));
-		return;
-	}
-
-	if (!QFile(cfgPath).exists()) {
-		if (isUserSelected)
-			showErrorMessage(i18n("The selected virtual environment does not contain a pyvenv.cfg file."));
 		return;
 	}
 
@@ -246,29 +291,49 @@ void SettingsScriptingPage::addEnvironment(const QString& rawEnvPath, bool selec
 		}
 	}
 
-	// try to read the venv version from pyvenv.cfg file
-	QFile cfgFile(QDir(envPath).absoluteFilePath(QStringLiteral("pyvenv.cfg")));
-	if (cfgFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&cfgFile);
-		while (!in.atEnd()) {
-			const QString line = in.readLine().trimmed();
-			// we found the version line in the pyvenv.cfg file
-			if (line.startsWith(QStringLiteral("version"))) {
-				const QString venvVersion = line.section(QLatin1Char('='), 1).trimmed();
-				if ((venvVersion == m_pythonMinorVersion) || venvVersion.startsWith(m_pythonMinorVersion + QStringLiteral("."))) {
-					ui.cbPythonEnvironment->addItem(envPath, executablePath);
-					if (selectAfterAdd)
-						ui.cbPythonEnvironment->setCurrentText(envPath);
-				} else {
-					if (isUserSelected)
-						showErrorMessage(i18n("The selected virtual environment python version does not match the application python version."));
+	// Check if this is a conda environment (has conda-meta directory)
+	const bool isCondaEnv = QDir(envPath + QStringLiteral("/conda-meta")).exists();
+	
+	// Check if this is a uv-managed Python installation
+	const bool isUvEnv = envPath.contains(QStringLiteral("/.local/share/uv/python/")) || 
+	                     envPath.contains(QStringLiteral("\\.local\\share\\uv\\python\\"));
+
+	// For standard venv environments, verify pyvenv.cfg exists
+	const QString cfgPath = envPath + QStringLiteral("/pyvenv.cfg");
+	const bool isStandardVenv = QFile(cfgPath).exists();
+
+	// If it's not a conda env, not a uv env, and not a standard venv, skip it
+	if (!isCondaEnv && !isUvEnv && !isStandardVenv) {
+		if (isUserSelected)
+			showErrorMessage(i18n("The selected directory is not a recognized Python environment."));
+		return;
+	}
+
+	// For standard venv environments, try to read the version from pyvenv.cfg
+	if (isStandardVenv && !isCondaEnv && !isUvEnv) {
+		QFile cfgFile(QDir(envPath).absoluteFilePath(QStringLiteral("pyvenv.cfg")));
+		if (cfgFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+			QTextStream in(&cfgFile);
+			while (!in.atEnd()) {
+				const QString line = in.readLine().trimmed();
+				if (line.startsWith(QStringLiteral("version"))) {
+					const QString venvVersion = line.section(QLatin1Char('='), 1).trimmed();
+					if ((venvVersion == m_pythonMinorVersion) || venvVersion.startsWith(m_pythonMinorVersion + QStringLiteral("."))) {
+						ui.cbPythonEnvironment->addItem(envPath, executablePath);
+						if (selectAfterAdd)
+							ui.cbPythonEnvironment->setCurrentText(envPath);
+					} else {
+						if (isUserSelected)
+							showErrorMessage(i18n("The selected virtual environment python version does not match the application python version."));
+					}
+					return;
 				}
-				return;
 			}
 		}
 	}
 
-	// fallback to process method if we cannot read venv version from pyvenv.cfg file
+	// For conda, uv, or venv environments where we couldn't read pyvenv.cfg,
+	// use the process method to get the version
 	auto* process = new QProcess(this);
 	connect(process, &QProcess::finished, this, [process, envPath, executablePath, this, selectAfterAdd, blockSignalsDuringSelect, isUserSelected](int exitCode, QProcess::ExitStatus exitStatus) {
 		if (exitStatus == QProcess::NormalExit && exitCode == 0) {

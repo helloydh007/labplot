@@ -30,6 +30,7 @@ private:
 	void discoverEnvironments();
 	void scanForVenvs(const QString& dir);
 	void scanForCondaEnvs(const QString& dir);
+	void scanForUvEnvironments(const QString& dir);
 	void addEnvironment(const QString& envPath, bool selectAfterAdd = false, bool blockSignalsDuringSelect = false, bool isUserSelected = false);
 	void changed();
 	void showErrorMessage(const QString&);
