@@ -93,7 +93,7 @@
                 "-DENABLE_EMBEDDED_DOCUMENTATION=OFF"
             ],
             "post-install": [
-                "install -Dm644 cantor_part.json /app/lib/plugins/kf6/parts/cantor_part.json",
+                "install -Dm644 src/cantor_part.json /app/lib/plugins/kf6/parts/cantor_part.json",
                 "install -Dm644 src/lib/cantor_backend.json /app/lib/plugins/cantor_plugins/cantor_backend.json",
                 "install -Dm644 src/lib/cantor_assistant.json /app/lib/plugins/cantor_plugins/cantor_assistant.json",
                 "install -Dm644 src/lib/cantor_panelplugin.json /app/lib/plugins/cantor_plugins/cantor_panelplugin.json",
