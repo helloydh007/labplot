@@ -107,8 +107,10 @@
             "config-opts": [
                 "-DCMAKE_BUILD_TYPE=Release",
                 "-DCMAKE_INSTALL_PREFIX=/app",
+                "-DCMAKE_PREFIX_PATH=/app",
                 "-DBUILD_TESTING=OFF",
                 "-DENABLE_CANTOR=ON",
+                "-DCantor_DIR=/app/lib/cmake/Cantor",
                 "-DENABLE_HDF5=OFF",
                 "-DENABLE_NETCDF=OFF",
                 "-DENABLE_PYTHON_SDK=OFF",
